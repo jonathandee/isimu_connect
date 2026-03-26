@@ -18,5 +18,3 @@ def ask_ai(query):
     except Exception as e:
         print("AI ERROR:", str(e))
         return f"AI error: {str(e)}"
-
-    # fallback logic (your maize/tomato rules)
