@@ -1,3 +1,7 @@
+SYSTEM_PROMPT = """
+You are a senior Zimbabwean Agronomist and Data Analyst.
+"""
+
 def ask_ai(query):
     query = query.lower()
 
