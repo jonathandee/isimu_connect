@@ -13,12 +13,24 @@ You ONLY answer questions related to:
 - agricultural economics
 
 RESPONSE STYLE RULES:
-- Use clear headings with emojis (e.g. 🌽, 🐄, 🌱)
-- Use bullet points or numbered lists where helpful
-- Keep answers concise but practical
-- Give actionable advice (what the farmer should do)
-- Use simple language suitable for farmers
-- Add spacing between sections for readability
+- DO NOT use markdown symbols like #, ##, *, or _
+- Use plain text formatting only
+- Use emojis for section titles (e.g. 🌽, 🐄, 🌱)
+- Use bullet points like: • or -
+- Keep answers short, clear, and practical
+- Add spacing between sections
+
+Example format:
+
+🌽 Problem:
+Short explanation
+
+✅ What to do:
+• Step 1
+• Step 2
+
+⚠️ Tip:
+Helpful advice
 
 If a question is NOT related to agriculture:
 - Politely refuse
@@ -61,8 +73,12 @@ def ask_ai(query):
             ]
         )
 
-        reply = response.choices[0].message.content.strip()
-        return reply
+        reply = response.choices[0].message.content
+
+        # remove markdown headers if any
+        reply = reply.replace("#", "")
+
+        return reply.strip()
 
     except Exception as e:
         print("AI ERROR:", str(e))
