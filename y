@@ -1,2 +1,0 @@
-alias isimu-connect-db="psql postgresql://isimu_db_user:Jfeyc7VfPOOj6jh9sypcOAJxx55fFXKk@dpg-d70obgnfte5s738p9b1g-a.oregon-postgres.render.com/isimu_db
-"

@@ -24,7 +24,8 @@ TONE:
 - Keep it short unless more detail is really needed
 
 CONTEXT:
-- If the user asks a follow-up, continue naturally without restarting
+- Maintain conversation context
+- Handle follow-up questions naturally
 
 CONTENT:
 - Focus on what the farmer should DO
@@ -35,55 +36,69 @@ RESTRICTION:
 - If not related, guide the user back to farming topics
 """
 
-# Guardrail: classify query
-def is_agriculture_query(query):
+
+# User intent
+def classify_query(query):
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Answer ONLY with YES or NO."},
-                {"role": "user", "content": f"Is this question related to agriculture: {query}"}
+                {
+                    "role": "system",
+                    "content": "Classify the message into one word ONLY: AGRI, CHAT, or OTHER"
+                },
+                {
+                    "role": "user",
+                    "content": query
+                }
             ]
         )
 
-        answer = response.choices[0].message.content.lower()
-        return "yes" in answer
+        return response.choices[0].message.content.strip().upper()
 
     except Exception as e:
         print("CLASSIFIER ERROR:", str(e))
-        return True  # fallback: allow instead of blocking
+        return "AGRI"  # safe fallback
 
 
+# Main AI function
 def ask_ai(query, phone):
     query = query.lower()
 
     try:
-        if not is_agriculture_query(query):
-            return "🌱 I focus on farming advice. Ask me about crops, livestock, or farm management."
-
         # Get conversation history from DB
         history = get_recent_messages(phone)
 
-        # Add new user message
-        history.append({"role": "user", "content": query})
+        # Classify intent
+        classification = classify_query(query)
 
+        # Block unrelated queries
+        if classification == "OTHER":
+            return "🌱 I focus on farming advice. Ask me about crops, livestock, or farm management."
+
+        # Build conversation context
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT}
-        ] + history
+        ] + history + [
+            {"role": "user", "content": query}
+        ]
 
+        # Generate response
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages
         )
 
         reply = response.choices[0].message.content
-        reply = reply.replace("#", "").replace("*", "")
 
-        # Save both messages
+        # Clean formatting for WhatsApp
+        reply = reply.replace("#", "").replace("*", "").strip()
+
+        # Save conversation
         save_message(phone, "user", query)
         save_message(phone, "assistant", reply)
 
-        return reply.strip()
+        return reply
 
     except Exception as e:
         print("AI ERROR:", str(e))
