@@ -46,6 +46,7 @@ def webhook():
                 text = message["text"]["body"].strip()
 
                 user = get_user_by_phone(phone)
+                name = user[1] if user else None
 
                 # New user → create + ask name
                 if not user:
@@ -61,7 +62,7 @@ def webhook():
 
                 # Normal flow
                 else:
-                    reply = ask_ai(text, phone)
+                    reply = ask_ai(text, phone, name)
 
                 # SEND RESPONSE TO WHATSAPP
                 url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
