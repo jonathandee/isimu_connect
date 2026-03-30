@@ -1,14 +1,17 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request
 from services.ai_service import ask_ai
-from services.price_service import get_price
+from services.user_service import get_user_by_phone, create_user, update_user_name
 import os
 import requests
 
 app = Flask(__name__)
 
-# 🔑 ENV VARIABLES (from Render)
+# ENV VARIABLES
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+
+# Temporary state (for onboarding)
+temp_states = {}
 
 @app.route('/')
 def home():
@@ -18,7 +21,7 @@ def home():
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
 
-    # 🔐 VERIFY WEBHOOK (Meta sends GET)
+    # VERIFY WEBHOOK
     if request.method == 'GET':
         VERIFY_TOKEN = "isimu_secret"
 
@@ -31,23 +34,36 @@ def webhook():
         else:
             return "Verification failed", 403
 
-    # 📩 HANDLE MESSAGES (POST)
+    # HANDLE WHATSAPP MESSAGES
     if request.method == 'POST':
         data = request.get_json()
 
         try:
-            # ✅ WhatsApp message format
             if "entry" in data:
                 message = data["entry"][0]["changes"][0]["value"]["messages"][0]
+
                 phone = message["from"]
-                text = message["text"]["body"]
+                text = message["text"]["body"].strip()
 
-                print("Incoming WhatsApp:", text)
+                user = get_user_by_phone(phone)
 
-                # 🧠 Process AI
-                ai_response = ask_ai(text)
+                # New user → create + ask name
+                if not user:
+                    create_user(phone)
+                    reply = "👋 Welcome to Isimu Connect 🌱\n\nWhat is your name?"
 
-                # 📤 Send reply back to WhatsApp
+                # Awaiting name
+                elif user[2] == "awaiting_name":
+                    name = text
+                    update_user_name(phone, name)
+
+                    reply = f"Welcome {name} to Isimu Connect 🌱\n\nYou can now ask me about crops, livestock, and farming."
+
+                # Normal flow
+                else:
+                    reply = ask_ai(text)
+
+                # SEND RESPONSE TO WHATSAPP
                 url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
                 headers = {
@@ -59,29 +75,15 @@ def webhook():
                     "messaging_product": "whatsapp",
                     "to": phone,
                     "type": "text",
-                    "text": {"body": ai_response}
+                    "text": {"body": reply}
                 }
 
                 requests.post(url, headers=headers, json=payload)
 
                 return "OK", 200
 
-            # 🧪 Fallback for curl testing (your old logic)
-            else:
-                message = data.get("message", "").lower()
-
-                if message.startswith("!ask"):
-                    query = message.replace("!ask", "").strip()
-                    response = ask_ai(query)
-                    return jsonify({"reply": response})
-
-                elif message.startswith("!price"):
-                    item = message.replace("!price", "").strip()
-                    response = get_price(item)
-                    return jsonify({"reply": response})
-
-                return jsonify({"reply": "Unknown command"})
+            return "No message", 200
 
         except Exception as e:
             print("ERROR:", str(e))
-            return jsonify({"reply": "Something went wrong"}), 500
+            return "Error", 500
