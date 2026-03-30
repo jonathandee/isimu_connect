@@ -74,13 +74,14 @@ def ask_ai(query, phone):
             messages=messages
         )
 
-        reply = response.choices[0].message.content.strip()
+        reply = response.choices[0].message.content
+        reply = reply.replace("#", "").replace("*", "")
 
         # Save both messages
         save_message(phone, "user", query)
         save_message(phone, "assistant", reply)
 
-        return reply
+        return reply.strip()
 
     except Exception as e:
         print("AI ERROR:", str(e))
