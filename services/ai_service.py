@@ -56,5 +56,5 @@ def ask_ai(query):
         return response.choices[0].message.content
 
     except Exception as e:
-    print("AI ERROR:", str(e))
-    return "⚠️ I’m having trouble processing your request right now. Please try again in a moment."
+        print("AI ERROR:", str(e))
+        return "⚠️ I’m having trouble processing your request right now. Please try again in a moment."
