@@ -61,7 +61,7 @@ def webhook():
 
                 # Normal flow
                 else:
-                    reply = ask_ai(text)
+                    reply = ask_ai(text, phone)
 
                 # SEND RESPONSE TO WHATSAPP
                 url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
