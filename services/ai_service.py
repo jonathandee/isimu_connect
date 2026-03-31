@@ -78,14 +78,10 @@ def ask_ai(query, phone, name=None):
     query = query.lower()
 
     try:
-        # Get conversation history from DB
         history = get_recent_messages(phone)
-
-        # Classify intent
         classification = classify_query(query)
 
-        # Block unrelated queries
-        if classification == "OTHER":
+        if not history and classification == "OTHER":
             return "🌱 I focus on farming advice. Ask me about crops, livestock, or farm management."
 
         # Build conversation context
