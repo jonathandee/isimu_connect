@@ -1,17 +1,33 @@
+from flask import Flask, request
+from services.ai_service import ask_ai
+from services.user_service import get_user_by_phone, create_user, update_user_name
+import os
+import requests
+
+app = Flask(__name__)
+
+# ENV VARIABLES
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+
+# Temporary state (for onboarding)
+temp_states = {}
+
+@app.route('/')
+def home():
+    return "Isimu Connect Bot is running 🚀"
+
+
 from flask import request
 import requests
 import os
 
-from services.user_service import get_user_by_phone, create_user, update_user_name
-from services.ai_service import ask_ai
-
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
-
 def send_message(to, text):
     url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
-
+    
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
         "Content-Type": "application/json"
@@ -30,7 +46,7 @@ def send_message(to, text):
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
 
-    # ✅ VERIFY WEBHOOK
+    # VERIFY WEBHOOK
     if request.method == 'GET':
         VERIFY_TOKEN = "isimu_secret"
 
@@ -43,46 +59,24 @@ def webhook():
         else:
             return "Verification failed", 403
 
-    # 🚀 HANDLE MESSAGES
+    # HANDLE MESSAGES
     if request.method == 'POST':
         data = request.get_json()
 
         try:
             value = data["entry"][0]["changes"][0]["value"]
 
-            # 🔒 Ignore non-message events
+            # Ignore non-message events (VERY IMPORTANT)
             if "messages" not in value:
                 return "ok", 200
 
             message = value["messages"][0]
             phone = message["from"]
-            text = message["text"]["body"].strip()
+            text = message["text"]["body"].strip().lower()
 
-            user = get_user_by_phone(phone)
-
-            # 🟢 FIRST TIME USER
-            if not user:
-                create_user(phone)
-                reply = "👋 Hi, welcome to IsimuConnect 🌱\n\nWhat’s your name?"
-                send_message(phone, reply)
-                return "ok", 200
-
-            # 🟡 USER EXISTS BUT NO NAME
-            if not user[1]:  # assuming name is second column
-                name = text.title()
-                update_user_name(phone, name)
-
-                reply = f"Nice to meet you, {name} 🙌\n\nWhat would you like help with?\n\n1️⃣ 🌽 Crops\n2️⃣ 🐄 Livestock\n3️⃣ 🐛 Pests & Diseases\n4️⃣ 💬 Ask anything"
-                send_message(phone, reply)
-                return "ok", 200
-
-            # 🧠 NORMAL FLOW
-            name = user[1]
-            text_lower = text.lower()
-
-            # 📋 MENU
-            if text_lower in ["hi", "hello", "menu", "start"]:
-                reply = f"""👋 Hi {name}, I’m IsimuConnect 🌱
+            # MENU LOGIC
+            if text in ["hi", "hello", "menu", "start"]:
+                reply = """👋 Hi, I’m IsimuConnect 🌱
 
 What would you like help with?
 
@@ -92,10 +86,10 @@ What would you like help with?
 4️⃣ 💬 Ask anything
 """
 
-            elif text_lower == "1":
-                reply = f"""🌽 Crop Support
+            elif text == "1":
+                reply = """🌽 Crop Support
 
-{name}, what do you need help with?
+What do you need help with?
 
 • Planting  
 • Fertilizer  
@@ -105,10 +99,10 @@ What would you like help with?
 Type your question 👇
 """
 
-            elif text_lower == "2":
-                reply = f"""🐄 Livestock Support
+            elif text == "2":
+                reply = """🐄 Livestock Support
 
-{name}, what do you need help with?
+What do you need help with?
 
 • Feeding  
 • Diseases  
@@ -118,10 +112,10 @@ Type your question 👇
 Describe your issue 👇
 """
 
-            elif text_lower == "3":
-                reply = f"""🐛 Pest & Disease Help
+            elif text == "3":
+                reply = """🐛 Pest & Disease Help
 
-{name}, tell me:
+Tell me:
 
 • Crop or animal  
 • Symptoms  
@@ -132,12 +126,13 @@ Example:
 👇 Go ahead
 """
 
-            elif text_lower == "4":
-                reply = f"Alright {name} 👍 Ask me anything about your farm."
+            elif text == "4":
+                reply = "Alright 👍 Ask me anything about your farm."
 
             else:
-                # 🤖 AI RESPONSE WITH PERSONALIZATION
-                reply = ask_ai(text, phone, name)
+                # 🤖 FALLBACK TO AI
+                from services.ai_service import ask_ai
+                reply = ask_ai(text, phone)
 
             # 📤 SEND RESPONSE
             send_message(phone, reply)
@@ -146,3 +141,58 @@ Example:
             print("Webhook error:", str(e))
 
         return "ok", 200
+
+    # HANDLE WHATSAPP MESSAGES
+    if request.method == 'POST':
+        data = request.get_json()
+
+        try:
+            if "entry" in data:
+                message = data["entry"][0]["changes"][0]["value"]["messages"][0]
+
+                phone = message["from"]
+                text = message["text"]["body"].strip()
+
+                user = get_user_by_phone(phone)
+                name = user[1] if user else None
+
+                # New user → create + ask name
+                if not user:
+                    create_user(phone)
+                    reply = "👋 Welcome to Isimu Connect 🌱\n\nWhat is your name?"
+
+                # Awaiting name
+                elif user[2] == "awaiting_name":
+                    name = text
+                    update_user_name(phone, name)
+
+                    reply = f"Welcome {name} to Isimu Connect 🌱\n\nYou can now ask me about crops, livestock, and farming."
+
+                # Normal flow
+                else:
+                    reply = ask_ai(text, phone, name)
+
+                # SEND RESPONSE TO WHATSAPP
+                url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
+
+                headers = {
+                    "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+                    "Content-Type": "application/json"
+                }
+
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "to": phone,
+                    "type": "text",
+                    "text": {"body": reply}
+                }
+
+                requests.post(url, headers=headers, json=payload)
+
+                return "OK", 200
+
+            return "No message", 200
+
+        except Exception as e:
+            print("ERROR:", str(e))
+            return "Error", 500
