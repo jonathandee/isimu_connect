@@ -18,6 +18,31 @@ def home():
     return "Isimu Connect Bot is running 🚀"
 
 
+from flask import request
+import requests
+import os
+
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+
+def send_message(to, text):
+    url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
+    
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"body": text}
+    }
+
+    requests.post(url, headers=headers, json=data)
+
+
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
 
@@ -33,6 +58,89 @@ def webhook():
             return challenge, 200
         else:
             return "Verification failed", 403
+
+    # HANDLE MESSAGES
+    if request.method == 'POST':
+        data = request.get_json()
+
+        try:
+            value = data["entry"][0]["changes"][0]["value"]
+
+            # Ignore non-message events (VERY IMPORTANT)
+            if "messages" not in value:
+                return "ok", 200
+
+            message = value["messages"][0]
+            phone = message["from"]
+            text = message["text"]["body"].strip().lower()
+
+            # MENU LOGIC
+            if text in ["hi", "hello", "menu", "start"]:
+                reply = """👋 Hi, I’m IsimuConnect 🌱
+
+What would you like help with?
+
+1️⃣ 🌽 Crops  
+2️⃣ 🐄 Livestock  
+3️⃣ 🐛 Pests & Diseases  
+4️⃣ 💬 Ask anything
+"""
+
+            elif text == "1":
+                reply = """🌽 Crop Support
+
+What do you need help with?
+
+• Planting  
+• Fertilizer  
+• Diseases  
+• Yields  
+
+Type your question 👇
+"""
+
+            elif text == "2":
+                reply = """🐄 Livestock Support
+
+What do you need help with?
+
+• Feeding  
+• Diseases  
+• Breeding  
+• Housing  
+
+Describe your issue 👇
+"""
+
+            elif text == "3":
+                reply = """🐛 Pest & Disease Help
+
+Tell me:
+
+• Crop or animal  
+• Symptoms  
+
+Example:
+"My maize leaves are yellow"
+
+👇 Go ahead
+"""
+
+            elif text == "4":
+                reply = "Alright 👍 Ask me anything about your farm."
+
+            else:
+                # 🤖 FALLBACK TO AI
+                from services.ai_service import ask_ai
+                reply = ask_ai(text, phone)
+
+            # 📤 SEND RESPONSE
+            send_message(phone, reply)
+
+        except Exception as e:
+            print("Webhook error:", str(e))
+
+        return "ok", 200
 
     # HANDLE WHATSAPP MESSAGES
     if request.method == 'POST':
