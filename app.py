@@ -83,7 +83,7 @@ What would you like help with?
 1️⃣ 🌽 Crops  
 2️⃣ 🐄 Livestock  
 3️⃣ 🐛 Pests & Diseases  
-4️⃣ 💬 Ask anything
+4️⃣ 💬 Ask Something else
 """
 
             elif text == "1":
