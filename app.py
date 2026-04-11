@@ -72,6 +72,9 @@ def webhook():
 
             message = value["messages"][0]
             phone = message.get("from")
+            
+            if messages.get("type") != "text":
+                return "ok", 200
 
             # Handle only text messages safely
             if "text" not in message:
@@ -80,10 +83,10 @@ def webhook():
             text = message["text"]["body"].strip()
             text_lower = text.lower()
 
-            # 🧠 USER HANDLING
+            # USER HANDLING
             user = get_user_by_phone(phone)
 
-            # 🟢 FIRST TIME USER
+            # FIRST TIME USER
             if not user:
                 create_user(phone)
                 reply = "👋 Welcome to IsimuConnect 🌱\n\nWhat’s your name?"
@@ -92,7 +95,7 @@ def webhook():
 
             name = user[1]  # assuming column 1 = name
 
-            # 🟡 USER EXISTS BUT NO NAME
+            # USER EXISTS BUT NO NAME
             if not name:
                 name = text.title()
                 update_user_name(phone, name)
@@ -101,7 +104,7 @@ def webhook():
                 send_message(phone, reply)
                 return "ok", 200
 
-            # 🧠 MENU LOGIC (PERSONALIZED)
+            # MENU LOGIC (PERSONALIZED)
             if text_lower in ["hi", "hello", "menu", "start"]:
                 reply = f"""👋 Hi {name}, I’m IsimuConnect 🌱
 
@@ -157,10 +160,8 @@ Example:
                 reply = f"Alright {name} 👍 Ask me anything about your farm."
 
             else:
-                # 🤖 AI RESPONSE WITH NAME
                 reply = ask_ai(text, phone, name)
 
-            # 📤 SEND RESPONSE
             send_message(phone, reply)
 
         except Exception as e:
