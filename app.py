@@ -66,12 +66,12 @@ def webhook():
         try:
             value = data["entry"][0]["changes"][0]["value"]
 
-            # Ignore non-message events
-            if "messages" not in value:
-                return "ok", 200
-
             message = value["messages"][0]
             phone = message.get("from")
+            
+            # Ignore non-message events
+            if "messages" not in messages:
+                return "ok", 200
             
             if messages.get("type") != "text":
                 return "ok", 200
