@@ -3,31 +3,28 @@ from services.ai_service import ask_ai
 from services.user_service import get_user_by_phone, create_user, update_user_name
 import os
 import requests
+import threading
+import redis
 
 app = Flask(__name__)
 
-# ENV VARIABLES
+# ENV
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+REDIS_URL = os.getenv("REDIS_URL")
 
-# Temporary state (for onboarding)
-temp_states = {}
+# Redis
+redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+
 
 @app.route('/')
 def home():
     return "Isimu Connect Bot is running 🚀"
 
 
-from flask import request
-import requests
-import os
-
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-
 def send_message(to, text):
     url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
-    
+
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
         "Content-Type": "application/json"
@@ -43,123 +40,99 @@ def send_message(to, text):
     requests.post(url, headers=headers, json=data)
 
 
+# MAIN PROCESSOR
+def process_message(message):
+    try:
+        phone = message.get("from")
+
+        if "text" not in message:
+            return
+
+        text = message["text"]["body"].strip()
+        text_lower = text.lower()
+
+        # USER
+        user = get_user_by_phone(phone)
+
+        if not user:
+            create_user(phone)
+            send_message(phone, "👋 Welcome to IsimuConnect 🌱\n\nWhat’s your name?")
+            return
+
+        name = user[1]
+
+        if not name:
+            name = text.title()
+            update_user_name(phone, name)
+            send_message(phone, f"Nice to meet you, {name} 🙌\n\nType menu to continue.")
+            return
+
+        # MENU
+        if text_lower in ["hi", "hello", "menu", "start"]:
+            reply = f"""👋 Hi {name}, I’m IsimuConnect 🌱
+
+1️⃣ Crops  
+2️⃣ Livestock  
+3️⃣ Pests & Diseases  
+4️⃣ Ask anything
+"""
+
+        elif text_lower == "1":
+            reply = "🌽 Crop support — ask your question 👍"
+
+        elif text_lower == "2":
+            reply = "🐄 Livestock support — tell me the issue 👍"
+
+        elif text_lower == "3":
+            reply = "🐛 Describe symptoms (crop/animal + signs) 👇"
+
+        elif text_lower == "4":
+            reply = f"Alright {name} 👍 Ask anything."
+
+        else:
+            reply = ask_ai(text, phone, name)
+
+        send_message(phone, reply)
+
+    except Exception as e:
+        print("Processing error:", str(e))
+
+
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
 
-    # ✅ VERIFY WEBHOOK
+    # VERIFY
     if request.method == 'GET':
         VERIFY_TOKEN = "isimu_secret"
 
-        mode = request.args.get("hub.mode")
-        token = request.args.get("hub.verify_token")
-        challenge = request.args.get("hub.challenge")
+        if request.args.get("hub.verify_token") == VERIFY_TOKEN:
+            return request.args.get("hub.challenge"), 200
+        return "Verification failed", 403
 
-        if mode == "subscribe" and token == VERIFY_TOKEN:
-            return challenge, 200
-        else:
-            return "Verification failed", 403
-
-    # 🚀 HANDLE MESSAGES
+    # HANDLE
     if request.method == 'POST':
         data = request.get_json()
 
         try:
             value = data["entry"][0]["changes"][0]["value"]
 
-            # Ignore non-message events
             if "messages" not in value:
                 return "ok", 200
 
             message = value["messages"][0]
-            phone = message.get("from")
+            message_id = message.get("id")
 
-            # Handle only text messages safely
-            if "text" not in message:
+            # ATOMIC REDIS DEDUP (BEST PRACTICE)
+            redis_key = f"msg:{message_id}"
+
+            is_new = redis_client.set(redis_key, "1", nx=True, ex=300)
+
+            if not is_new:
+                print("Duplicate ignored early:", message_id)
                 return "ok", 200
 
-            text = message["text"]["body"].strip()
-            text_lower = text.lower()
-
-            # 🧠 USER HANDLING
-            user = get_user_by_phone(phone)
-
-            # 🟢 FIRST TIME USER
-            if not user:
-                create_user(phone)
-                reply = "👋 Welcome to IsimuConnect 🌱\n\nWhat’s your name?"
-                send_message(phone, reply)
-                return "ok", 200
-
-            name = user[1]  # assuming column 1 = name
-
-            # 🟡 USER EXISTS BUT NO NAME
-            if not name:
-                name = text.title()
-                update_user_name(phone, name)
-
-                reply = f"Nice to meet you, {name} 🙌\n\nHow can I help you today?\n\nType menu to see options."
-                send_message(phone, reply)
-                return "ok", 200
-
-            # 🧠 MENU LOGIC (PERSONALIZED)
-            if text_lower in ["hi", "hello", "menu", "start"]:
-                reply = f"""👋 Hi {name}, I’m IsimuConnect 🌱
-
-What would you like help with?
-
-1️⃣ 🌽 Crops  
-2️⃣ 🐄 Livestock  
-3️⃣ 🐛 Pests & Diseases  
-4️⃣ 💬 Ask anything else
-"""
-
-            elif text_lower == "1":
-                reply = f"""🌽 Crop Support
-
-{name}, what do you need help with?
-
-• Planting  
-• Fertilizer  
-• Diseases  
-• Yields  
-
-Type your question 👇
-"""
-
-            elif text_lower == "2":
-                reply = f"""🐄 Livestock Support
-
-{name}, what do you need help with?
-
-• Feeding  
-• Diseases  
-• Breeding  
-• Housing  
-
-Describe your issue 👇
-"""
-
-            elif text_lower == "3":
-                reply = f"""🐛 Pest & Disease Help
-
-{name}, tell me:
-
-• Crop or animal  
-• Symptoms  
-
-Example:
-"My maize leaves are yellow"
-
-👇 Go ahead
-"""
-
-            elif text_lower == "4":
-                reply = f"Alright {name} 👍 Ask me anything about your farm."
-
-            else:
-                reply = ask_ai(text, phone, name)
-
-            send_message(phone, reply)
+            # PROCESS IN BACKGROUND
+            threading.Thread(target=process_message, args=(message,)).start()
 
         except Exception as e:
             print("Webhook error:", str(e))
