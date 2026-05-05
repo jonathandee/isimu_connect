@@ -4,17 +4,17 @@ from services.user_service import get_user_by_phone, create_user, update_user_na
 import os
 import requests
 import threading
-import redis
+import time
 
 app = Flask(__name__)
 
 # ENV
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-REDIS_URL = os.getenv("REDIS_URL")
 
-# Redis
-redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+# In-memory dedup store with timestamps
+processed_messages = {}
+DEDUP_TTL = 300  # seconds (5 minutes)
 
 
 @app.route('/')
@@ -40,7 +40,18 @@ def send_message(to, text):
     requests.post(url, headers=headers, json=data)
 
 
-# MAIN PROCESSOR
+# CLEAN OLD MESSAGE IDS
+def cleanup_processed_messages():
+    now = time.time()
+    keys_to_delete = [
+        k for k, v in processed_messages.items()
+        if now - v > DEDUP_TTL
+    ]
+    for k in keys_to_delete:
+        del processed_messages[k]
+
+
+# MAIN PROCESSING LOGIC
 def process_message(message):
     try:
         phone = message.get("from")
@@ -122,14 +133,16 @@ def webhook():
             message = value["messages"][0]
             message_id = message.get("id")
 
-            # ATOMIC REDIS DEDUP (BEST PRACTICE)
-            redis_key = f"msg:{message_id}"
+            # CLEAN OLD IDS
+            cleanup_processed_messages()
 
-            is_new = redis_client.set(redis_key, "1", nx=True, ex=300)
-
-            if not is_new:
-                print("Duplicate ignored early:", message_id)
+            # DEDUP CHECK
+            if message_id in processed_messages:
+                print("Duplicate ignored:", message_id)
                 return "ok", 200
+
+            # Store with timestamp
+            processed_messages[message_id] = time.time()
 
             # PROCESS IN BACKGROUND
             threading.Thread(target=process_message, args=(message,)).start()
