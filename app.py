@@ -80,7 +80,8 @@ def process_message(message):
 
         # MENU
         if text_lower in ["hi", "hello", "menu", "start"]:
-            reply = f"""👋 Hi {name}, I’m IsimuConnect 🌱
+            reply = f"""👋 Hi {name}, I’m IsimuConnect 🌱, what do 
+            you need help with today?
 
 1️⃣ Crops  
 2️⃣ Livestock  
